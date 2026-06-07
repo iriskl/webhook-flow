@@ -1,0 +1,13 @@
+node_modules
+**/node_modules
+dist
+**/dist
+coverage
+data/*.db
+data/*.db-journal
+data/*.db-wal
+data/*.db-shm
+.git
+.DS_Store
+playwright-report
+test-results

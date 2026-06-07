@@ -1,0 +1,101 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Endpoint {
+  id         String     @id @default(cuid())
+  name       String
+  slug       String     @unique
+  secretHash String
+  enabled    Boolean    @default(true)
+  createdAt  DateTime   @default(now())
+  updatedAt  DateTime   @updatedAt
+  workflows  Workflow[]
+  events     Event[]
+}
+
+model Workflow {
+  id        String      @id @default(cuid())
+  name      String
+  endpointId String
+  dslText   String
+  dslFormat String
+  enabled   Boolean     @default(true)
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+  endpoint  Endpoint    @relation(fields: [endpointId], references: [id], onDelete: Cascade)
+  executions Execution[]
+}
+
+model Event {
+  id          String      @id @default(cuid())
+  endpointId  String
+  headersJson String
+  payloadJson String
+  sourceIp    String?
+  receivedAt  DateTime    @default(now())
+  endpoint    Endpoint    @relation(fields: [endpointId], references: [id], onDelete: Cascade)
+  executions  Execution[]
+}
+
+model Execution {
+  id           String    @id @default(cuid())
+  eventId      String
+  workflowId   String
+  status       String    @default("pending")
+  skippedReason String?
+  errorMessage String?
+  startedAt    DateTime?
+  finishedAt   DateTime?
+  createdAt    DateTime  @default(now())
+  event        Event     @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  workflow     Workflow  @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+  stepLogs     StepLog[]
+  retryJobs    RetryJob[]
+}
+
+model StepLog {
+  id           String    @id @default(cuid())
+  executionId  String
+  stepIndex    Int
+  stepName     String
+  type         String
+  status       String    @default("pending")
+  inputJson    String?
+  outputJson   String?
+  errorMessage String?
+  attempt      Int       @default(1)
+  startedAt    DateTime?
+  finishedAt   DateTime?
+  execution    Execution @relation(fields: [executionId], references: [id], onDelete: Cascade)
+
+  @@index([executionId, stepIndex])
+}
+
+model RetryJob {
+  id          String    @id @default(cuid())
+  executionId String
+  stepIndex   Int
+  attempt     Int
+  nextRunAt   DateTime
+  lockedUntil DateTime?
+  status      String    @default("pending")
+  lastError   String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  execution   Execution @relation(fields: [executionId], references: [id], onDelete: Cascade)
+
+  @@index([status, nextRunAt])
+}
+
+model MockMessage {
+  id          String   @id @default(cuid())
+  headersJson String
+  bodyJson    String
+  receivedAt  DateTime @default(now())
+}
