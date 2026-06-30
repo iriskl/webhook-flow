@@ -66,6 +66,7 @@ interface StepLog {
 
 interface MockMessage {
   id: string;
+  target?: string;
   headers: Record<string, unknown>;
   body: unknown;
   receivedAt: string;
@@ -238,6 +239,7 @@ export function App() {
   const visibleExecutions = executions.filter((execution) =>
     executionStatusFilter === "all" ? true : execution.status === executionStatusFilter
   );
+  const mockGroups = groupMockMessages(mockMessages);
   const isBusy = Boolean(busyAction);
 
   return (
@@ -453,11 +455,16 @@ export function App() {
               </button>
             </div>
             <div className="messageList">
-              {mockMessages.map((message) => (
-                <article key={message.id} className="message">
-                  <time>{formatTime(message.receivedAt)}</time>
-                  <pre>{JSON.stringify({ headers: message.headers, body: message.body }, null, 2)}</pre>
-                </article>
+              {mockGroups.map(([target, messages]) => (
+                <section className="messageGroup" key={target}>
+                  <h3>/messages/{target}</h3>
+                  {messages.map((message) => (
+                    <article key={message.id} className="message">
+                      <time>{formatTime(message.receivedAt)}</time>
+                      <pre>{JSON.stringify({ headers: message.headers, body: message.body }, null, 2)}</pre>
+                    </article>
+                  ))}
+                </section>
               ))}
             </div>
           </section>
@@ -614,6 +621,15 @@ function ExecutionDetail({ execution }: { execution: ExecutionItem | null }) {
 
 function Status({ value }: { value: string }) {
   return <span className={`status ${value}`}>{statusLabel(value)}</span>;
+}
+
+function groupMockMessages(messages: MockMessage[]) {
+  const groups = new Map<string, MockMessage[]>();
+  for (const message of messages) {
+    const target = message.target ?? String(message.headers["x-mock-target"] ?? "default");
+    groups.set(target, [...(groups.get(target) ?? []), message]);
+  }
+  return [...groups.entries()];
 }
 
 function metricLabel(key: string) {

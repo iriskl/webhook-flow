@@ -2,7 +2,7 @@
 
 ## 演示目标
 
-用 5 到 8 分钟展示一个完整事件链路：创建 endpoint、保存 workflow、发送模拟事件、查看 execution log、确认 mock receiver 收到转发。
+用 5 到 8 分钟展示一个完整事件链路：创建 endpoint、保存 workflow、发送模拟事件、查看 execution log、确认 Mock Receiver 按下游目标路径收到转发。
 
 ## 演示环境
 
@@ -18,7 +18,7 @@
 4. 点击 DSL 校验，展示中文校验结果。
 5. 选择 GitHub push 样例并发送。
 6. 打开 execution 详情，说明 filter、step.when、HTTP 转发和重试日志。
-7. 打开 Mock Receiver，展示实际收到的转发 body。
+7. 打开 Mock Receiver，展示 `/messages/audit`、`/messages/notify`、`/messages/monitor`、`/messages/payment` 等下游目标分组中的转发 body。
 8. 如果需要展示失败路径，可临时把 workflow URL 改成不存在端口，再发送事件，查看失败和重试记录。
 
 ## 真实 git 演示补充
@@ -40,4 +40,4 @@ pnpm demo:git-push <endpoint-slug> <endpoint-secret> .
 - 能跨 macOS、Linux、Windows 使用 Node.js/pnpm 本地运行。
 - 能用 Docker Compose 启动 API、Web、Mock Receiver。
 - 能通过 `pnpm verify:e2e` 跑通完整链路。
-- 控制台中文文案清楚，按钮、表格、编辑器和时间线不重叠。
+- 控制台中文文案清楚，按钮、表格、编辑器、时间线和 Mock Receiver 分组不重叠。

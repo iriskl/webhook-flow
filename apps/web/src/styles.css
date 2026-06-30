@@ -377,6 +377,15 @@ th {
   gap: 12px;
 }
 
+.messageGroup {
+  display: grid;
+  gap: 10px;
+}
+
+.messageGroup h3 {
+  margin: 0;
+}
+
 .message {
   border: 1px solid var(--line);
   border-radius: 7px;

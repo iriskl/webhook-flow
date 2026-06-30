@@ -81,7 +81,7 @@ steps:
     type: httpRequest
     when: "body.ref == 'refs/heads/main'"
     method: POST
-    url: "${target}"
+    url: "${target}/audit"
     headers:
       x-demo-source: github
       x-demo-target: audit
@@ -93,7 +93,7 @@ steps:
     type: httpRequest
     when: "body.ref == 'refs/heads/main'"
     method: POST
-    url: "${target}"
+    url: "${target}/notify"
     headers:
       x-demo-source: github
       x-demo-target: notify
@@ -104,7 +104,7 @@ steps:
     type: httpRequest
     when: "body.level == 'critical'"
     method: POST
-    url: "${target}"
+    url: "${target}/monitor"
     headers:
       x-demo-source: monitor
     body:
@@ -115,7 +115,7 @@ steps:
     type: httpRequest
     when: "body.event == 'payment.succeeded'"
     method: POST
-    url: "${target}"
+    url: "${target}/payment"
     headers:
       x-demo-source: payment
     body:

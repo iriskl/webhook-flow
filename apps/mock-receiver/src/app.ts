@@ -8,15 +8,24 @@ export function buildMockReceiver(prisma = new PrismaClient()) {
 
   app.get("/health", async () => ({ ok: true, service: "webhook-flow-mock-receiver" }));
 
-  app.post("/messages", async (request, reply) => {
+  async function saveMessage(request: { headers: unknown; body: unknown }, target: string, reply: { status: (code: number) => void }) {
     const message = await prisma.mockMessage.create({
       data: {
-        headersJson: JSON.stringify(request.headers),
+        headersJson: JSON.stringify({ ...(request.headers as Record<string, unknown>), "x-mock-target": target }),
         bodyJson: JSON.stringify(request.body ?? {})
       }
     });
     reply.status(201);
     return serializeMessage(message);
+  }
+
+  app.post("/messages", async (request, reply) => {
+    return saveMessage(request, "default", reply);
+  });
+
+  app.post("/messages/:target", async (request, reply) => {
+    const { target } = request.params as { target: string };
+    return saveMessage(request, target, reply);
   });
 
   app.get("/messages", async () => {
@@ -33,9 +42,11 @@ export function buildMockReceiver(prisma = new PrismaClient()) {
 }
 
 function serializeMessage(message: { id: string; headersJson: string; bodyJson: string; receivedAt: Date }) {
+  const headers = JSON.parse(message.headersJson);
   return {
     id: message.id,
-    headers: JSON.parse(message.headersJson),
+    target: headers["x-mock-target"] ?? "default",
+    headers,
     body: JSON.parse(message.bodyJson),
     receivedAt: message.receivedAt
   };

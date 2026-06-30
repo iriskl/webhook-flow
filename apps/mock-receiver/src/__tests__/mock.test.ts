@@ -37,9 +37,11 @@ describe("mock receiver", () => {
 
   it("接收、查询并清空消息", async () => {
     const app = buildMockReceiver();
-    const created = await app.inject({ method: "POST", url: "/messages", payload: { text: "hello" } });
+    const created = await app.inject({ method: "POST", url: "/messages/audit", payload: { text: "hello" } });
     expect(created.statusCode).toBe(201);
+    expect(created.json().target).toBe("audit");
     const list = await app.inject({ method: "GET", url: "/messages" });
+    expect(list.json().messages[0].target).toBe("audit");
     expect(list.json().messages[0].body.text).toBe("hello");
     await app.inject({ method: "DELETE", url: "/messages" });
     const empty = await app.inject({ method: "GET", url: "/messages" });

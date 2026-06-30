@@ -83,6 +83,7 @@ beforeEach(() => {
         messages: [
           {
             id: "message-1",
+            target: "audit",
             headers: { "x-demo-source": "webhook-flow" },
             body: { text: "Repo webhook-flow pushed by demo-user" },
             receivedAt: "2026-06-05T00:00:00.000Z"
@@ -154,6 +155,7 @@ describe("Webhook Flow 控制台", () => {
   it("mock receiver 展示 headers 和 body", async () => {
     render(<App />);
     fireEvent.click(await screen.findByRole("button", { name: /Mock Receiver/ }));
+    expect(await screen.findByText("/messages/audit")).toBeInTheDocument();
     expect(await screen.findByText(/x-demo-source/)).toBeInTheDocument();
     expect(screen.getByText(/Repo webhook-flow pushed/)).toBeInTheDocument();
   });
