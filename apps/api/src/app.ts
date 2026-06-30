@@ -26,7 +26,7 @@ export function buildApp(): FastifyInstance {
   const app = Fastify({ logger: false });
   const prisma = getPrisma();
 
-  app.register(cors, { origin: true });
+  app.register(cors, { origin: true, methods: ["GET", "POST", "PATCH", "DELETE", "OPTIONS"] });
 
   app.addContentTypeParser("application/json", { parseAs: "buffer" }, (request, body, done) => {
     request.rawBody = Buffer.isBuffer(body) ? body : Buffer.from(body);
