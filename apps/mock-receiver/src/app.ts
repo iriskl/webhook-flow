@@ -4,7 +4,7 @@ import { PrismaClient } from "@prisma/client";
 
 export function buildMockReceiver(prisma = new PrismaClient()) {
   const app = Fastify({ logger: false });
-  app.register(cors, { origin: true });
+  app.register(cors, { origin: true, methods: ["GET", "POST", "DELETE", "OPTIONS"] });
 
   app.get("/health", async () => ({ ok: true, service: "webhook-flow-mock-receiver" }));
 
