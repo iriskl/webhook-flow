@@ -1,10 +1,27 @@
 import { execFileSync } from "node:child_process";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { defaultDemoWorkflow, samplePayloads, signPayload, signatureHeaderName } from "@webhook-flow/shared";
+import { samplePayloads, signPayload, signatureHeaderName } from "@webhook-flow/shared";
 import { buildApp } from "../app.js";
 import { getPrisma } from "../db/client.js";
 
 process.env.DATABASE_URL = process.env.DATABASE_URL ?? "file:../data/test.db";
+
+const githubOnlyWorkflow = `name: github-main-push
+trigger:
+  endpoint: github-demo
+filter:
+  expr: "body.ref == 'refs/heads/main'"
+steps:
+  - name: notify-mock
+    type: httpRequest
+    method: POST
+    url: "http://localhost:4001/messages"
+    body:
+      text: "Repo {{body.repository.name}}"
+    retry:
+      maxAttempts: 2
+      backoffSeconds: 0
+`;
 
 beforeAll(() => {
   execFileSync("corepack", ["pnpm", "db:push"], {
@@ -33,7 +50,7 @@ describe("执行引擎", () => {
     await app.inject({
       method: "POST",
       url: "/api/workflows",
-      payload: { endpointId: endpoint.id, dslText: defaultDemoWorkflow.replace("backoffSeconds: 1", "backoffSeconds: 0") }
+      payload: { endpointId: endpoint.id, dslText: githubOnlyWorkflow }
     });
     const raw = JSON.stringify({ ...samplePayloads.githubPush.body, ref: "refs/heads/dev" });
     await app.inject({
@@ -60,7 +77,7 @@ describe("执行引擎", () => {
     await app.inject({
       method: "POST",
       url: "/api/workflows",
-      payload: { endpointId: endpoint.id, dslText: defaultDemoWorkflow }
+      payload: { endpointId: endpoint.id, dslText: githubOnlyWorkflow }
     });
     const raw = JSON.stringify(samplePayloads.githubPush.body);
     await app.inject({
