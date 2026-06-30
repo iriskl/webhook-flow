@@ -26,6 +26,22 @@ beforeEach(async () => {
 });
 
 describe("API endpoint 和 workflow", () => {
+  it("允许浏览器预检 PATCH endpoint 状态更新", async () => {
+    const app = buildApp();
+    const response = await app.inject({
+      method: "OPTIONS",
+      url: "/api/endpoints/demo",
+      headers: {
+        origin: "http://localhost:5173",
+        "access-control-request-method": "PATCH",
+        "access-control-request-headers": "content-type"
+      }
+    });
+    expect(response.statusCode).toBe(204);
+    expect(response.headers["access-control-allow-methods"]).toContain("PATCH");
+    await app.close();
+  });
+
   it("创建 endpoint 时返回一次性 secret，详情不返回 secret", async () => {
     const app = buildApp();
     const created = await app.inject({
