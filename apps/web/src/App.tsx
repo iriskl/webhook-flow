@@ -97,6 +97,7 @@ export function App() {
   const [executionStatusFilter, setExecutionStatusFilter] = useState("all");
   const [notice, setNotice] = useState("准备就绪");
   const [error, setError] = useState("");
+  const [busyAction, setBusyAction] = useState("");
   const stats = useMemo(
     () => ({
       endpoints: endpoints.length,
@@ -107,9 +108,9 @@ export function App() {
     [endpoints, workflows, executions, mockMessages]
   );
 
-  async function refreshAll() {
+  async function refreshAll(options: { silent?: boolean } = {}) {
     try {
-      setError("");
+      if (!options.silent) setError("");
       const [endpointData, workflowData, executionData, mockData] = await Promise.all([
         apiGet<{ endpoints: Endpoint[] }>("/api/endpoints"),
         apiGet<{ workflows: WorkflowItem[] }>("/api/workflows"),
@@ -122,26 +123,40 @@ export function App() {
       setMockMessages(mockData.messages);
       if (!selectedEndpointId && endpointData.endpoints[0]) setSelectedEndpointId(endpointData.endpoints[0].id);
       if (!selectedWorkflowId && workflowData.workflows[0]) setSelectedWorkflowId(workflowData.workflows[0].id);
-      setNotice("数据已刷新");
+      if (!options.silent) setNotice("数据已刷新");
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      if (!options.silent) setError(err instanceof Error ? err.message : String(err));
     }
   }
 
   useEffect(() => {
-    void refreshAll();
+    void refreshAll({ silent: true });
     const timer = window.setInterval(() => {
-      void refreshAll();
+      void refreshAll({ silent: true });
     }, 1000);
     return () => window.clearInterval(timer);
   }, []);
+
+  async function runAction(label: string, action: () => Promise<void>, doneMessage?: string) {
+    setError("");
+    setNotice(`${label}处理中...`);
+    setBusyAction(label);
+    try {
+      await action();
+      if (doneMessage) setNotice(doneMessage);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusyAction("");
+    }
+  }
 
   async function createEndpoint() {
     const endpoint = await apiSend<Endpoint>("/api/endpoints", { name: endpointName });
     setEndpointSecretMap((current) => ({ ...current, [endpoint.id]: endpoint.secret ?? "" }));
     setSelectedEndpointId(endpoint.id);
+    await refreshAll({ silent: true });
     setNotice(`已创建 endpoint：${endpoint.name}`);
-    await refreshAll();
   }
 
   async function rotateSecret(endpoint: Endpoint) {
@@ -152,7 +167,8 @@ export function App() {
 
   async function toggleEndpoint(endpoint: Endpoint) {
     await apiSend(`/api/endpoints/${endpoint.id}`, { enabled: !endpoint.enabled }, "PATCH");
-    await refreshAll();
+    await refreshAll({ silent: true });
+    setNotice(`已${endpoint.enabled ? "停用" : "启用"} endpoint：${endpoint.name}`);
   }
 
   async function saveWorkflow() {
@@ -162,8 +178,8 @@ export function App() {
       dslText: workflowText
     });
     setSelectedWorkflowId(result.id);
+    await refreshAll({ silent: true });
     setNotice(`已保存 workflow：${result.name}`);
-    await refreshAll();
   }
 
   async function validateWorkflow() {
@@ -189,25 +205,34 @@ export function App() {
       return;
     }
     await apiSend("/api/demo/send-sample", { endpointId: selectedEndpointId, sample: sampleKey, secret });
+    await refreshAll({ silent: true });
     setNotice(`已发送样例事件：${samplePayloads[sampleKey].label}`);
-    await refreshAll();
   }
 
   async function openExecution(id: string) {
     const detail = await apiGet<ExecutionItem>(`/api/executions/${id}`);
     setSelectedExecution(detail);
+    setNotice(`已打开 execution：${id.slice(0, 8)}`);
   }
 
   async function clearMockMessages() {
     await mockDelete("/messages");
+    await refreshAll({ silent: true });
     setNotice("mock receiver 消息已清空");
-    await refreshAll();
+  }
+
+  async function copyHookUrl(hookUrl: string) {
+    if (!navigator.clipboard) {
+      throw new Error("当前浏览器不支持自动复制，请手动复制接收地址");
+    }
+    await navigator.clipboard.writeText(hookUrl);
   }
 
   const activeEndpoint = endpoints.find((endpoint) => endpoint.id === selectedEndpointId);
   const visibleExecutions = executions.filter((execution) =>
     executionStatusFilter === "all" ? true : execution.status === executionStatusFilter
   );
+  const isBusy = Boolean(busyAction);
 
   return (
     <div className="shell">
@@ -242,7 +267,12 @@ export function App() {
             <p className="eyebrow">本地演示环境</p>
             <h1>{navItems.find((item) => item.page === page)?.label}</h1>
           </div>
-          <button className="iconButton" onClick={() => void refreshAll()} title="刷新数据">
+          <button
+            className="iconButton"
+            disabled={isBusy}
+            onClick={() => void runAction("刷新数据", () => refreshAll())}
+            title="刷新数据"
+          >
             <RefreshCw size={18} />
             刷新
           </button>
@@ -260,7 +290,10 @@ export function App() {
             ))}
             <div className="panel wide">
               <h2>最近 executions</h2>
-              <ExecutionTable executions={executions.slice(0, 6)} onOpen={openExecution} />
+              <ExecutionTable
+                executions={executions.slice(0, 6)}
+                onOpen={(id) => runAction("打开 execution", () => openExecution(id))}
+              />
             </div>
           </section>
         )}
@@ -269,7 +302,7 @@ export function App() {
           <section className="stack">
             <div className="toolbar">
               <input value={endpointName} onChange={(event) => setEndpointName(event.target.value)} />
-              <button onClick={() => void createEndpoint()}>
+              <button disabled={isBusy} onClick={() => void runAction("创建 endpoint", createEndpoint)}>
                 <Server size={16} />
                 创建 endpoint
               </button>
@@ -297,14 +330,26 @@ export function App() {
                         <Status value={endpoint.enabled ? "enabled" : "disabled"} />
                       </td>
                       <td className="actions">
-                        <button onClick={() => setSelectedEndpointId(endpoint.id)}>详情</button>
-                        <button title="复制地址" onClick={() => navigator.clipboard?.writeText(endpoint.hookUrl)}>
+                        <button
+                          disabled={isBusy}
+                          onClick={() => {
+                            setSelectedEndpointId(endpoint.id);
+                            setNotice(`已选择 endpoint：${endpoint.name}`);
+                          }}
+                        >
+                          详情
+                        </button>
+                        <button
+                          disabled={isBusy}
+                          title="复制地址"
+                          onClick={() => void runAction("复制地址", () => copyHookUrl(endpoint.hookUrl), "地址已复制")}
+                        >
                           <Clipboard size={15} />
                         </button>
-                        <button onClick={() => void toggleEndpoint(endpoint)}>
+                        <button disabled={isBusy} onClick={() => void runAction("切换 endpoint 状态", () => toggleEndpoint(endpoint))}>
                           {endpoint.enabled ? "停用" : "启用"}
                         </button>
-                        <button onClick={() => void rotateSecret(endpoint)}>
+                        <button disabled={isBusy} onClick={() => void runAction("重置 secret", () => rotateSecret(endpoint))}>
                           <RotateCcw size={15} />
                           重置 secret
                         </button>
@@ -343,15 +388,15 @@ export function App() {
               </div>
               <textarea value={workflowText} onChange={(event) => setWorkflowText(event.target.value)} />
               <div className="toolbar">
-                <button onClick={() => void validateWorkflow()}>
+                <button disabled={isBusy} onClick={() => void runAction("校验 DSL", validateWorkflow)}>
                   <FlaskConical size={16} />
                   校验
                 </button>
-                <button onClick={() => void saveWorkflow()}>
+                <button disabled={isBusy} onClick={() => void runAction("保存 workflow", saveWorkflow)}>
                   <Save size={16} />
                   保存
                 </button>
-                <button onClick={() => void testWorkflow()}>
+                <button disabled={isBusy} onClick={() => void runAction("测试 workflow", testWorkflow)}>
                   <Play size={16} />
                   测试
                 </button>
@@ -361,7 +406,8 @@ export function App() {
               activeEndpoint={activeEndpoint}
               sampleKey={sampleKey}
               onSampleChange={setSampleKey}
-              onSend={sendSample}
+              onSend={() => runAction("发送样例事件", sendSample)}
+              disabled={isBusy}
             />
           </section>
         )}
@@ -383,7 +429,10 @@ export function App() {
                   <option value="skipped">跳过</option>
                 </select>
               </div>
-              <ExecutionTable executions={visibleExecutions} onOpen={openExecution} />
+              <ExecutionTable
+                executions={visibleExecutions}
+                onOpen={(id) => runAction("打开 execution", () => openExecution(id))}
+              />
             </div>
             <ExecutionDetail execution={selectedExecution} />
           </section>
@@ -393,7 +442,9 @@ export function App() {
           <section className="panel">
             <div className="panelHeader">
               <h2>Mock Receiver 消息</h2>
-              <button onClick={() => void clearMockMessages()}>清空</button>
+              <button disabled={isBusy} onClick={() => void runAction("清空 mock receiver", clearMockMessages)}>
+                清空
+              </button>
             </div>
             <div className="messageList">
               {mockMessages.map((message) => (
@@ -454,12 +505,14 @@ function DemoSender({
   activeEndpoint,
   sampleKey,
   onSampleChange,
-  onSend
+  onSend,
+  disabled
 }: {
   activeEndpoint?: Endpoint;
   sampleKey: keyof typeof samplePayloads;
   onSampleChange: (key: keyof typeof samplePayloads) => void;
   onSend: () => Promise<void>;
+  disabled?: boolean;
 }) {
   return (
     <div className="panel">
@@ -473,7 +526,7 @@ function DemoSender({
         ))}
       </select>
       <pre className="sample">{JSON.stringify(samplePayloads[sampleKey].body, null, 2)}</pre>
-      <button className="primary" onClick={() => void onSend()}>
+      <button className="primary" disabled={disabled} onClick={() => void onSend()}>
         <Send size={16} />
         发送样例事件
       </button>
