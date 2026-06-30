@@ -121,8 +121,8 @@ export function App() {
       setWorkflows(workflowData.workflows);
       setExecutions(executionData.executions);
       setMockMessages(mockData.messages);
-      if (!selectedEndpointId && endpointData.endpoints[0]) setSelectedEndpointId(endpointData.endpoints[0].id);
-      if (!selectedWorkflowId && workflowData.workflows[0]) setSelectedWorkflowId(workflowData.workflows[0].id);
+      setSelectedEndpointId((current) => current || endpointData.endpoints[0]?.id || "");
+      setSelectedWorkflowId((current) => current || workflowData.workflows[0]?.id || "");
       if (!options.silent) setNotice("数据已刷新");
     } catch (err) {
       if (!options.silent) setError(err instanceof Error ? err.message : String(err));
@@ -166,9 +166,15 @@ export function App() {
   }
 
   async function toggleEndpoint(endpoint: Endpoint) {
-    await apiSend(`/api/endpoints/${endpoint.id}`, { enabled: !endpoint.enabled }, "PATCH");
-    await refreshAll({ silent: true });
+    const updated = await apiSend<Endpoint>(`/api/endpoints/${endpoint.id}`, { enabled: !endpoint.enabled }, "PATCH");
+    setEndpoints((current) => current.map((item) => (item.id === updated.id ? updated : item)));
     setNotice(`已${endpoint.enabled ? "停用" : "启用"} endpoint：${endpoint.name}`);
+  }
+
+  function selectWorkflow(id: string) {
+    setSelectedWorkflowId(id);
+    const workflow = workflows.find((item) => item.id === id);
+    if (workflow) setWorkflowText(workflow.dslText);
   }
 
   async function saveWorkflow() {
@@ -377,7 +383,7 @@ export function App() {
                     </option>
                   ))}
                 </select>
-                <select value={selectedWorkflowId} onChange={(event) => setSelectedWorkflowId(event.target.value)}>
+                <select value={selectedWorkflowId} onChange={(event) => selectWorkflow(event.target.value)}>
                   <option value="">选择 workflow</option>
                   {workflows.map((workflow) => (
                     <option key={workflow.id} value={workflow.id}>
