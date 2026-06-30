@@ -15,6 +15,7 @@
     "db:migrate": "node scripts/init-db.mjs",
     "db:push": "node scripts/init-db.mjs",
     "verify:e2e": "node scripts/e2e-verify.mjs",
+    "demo:git-push": "node scripts/send-git-push.mjs",
     "check:comments": "node scripts/check-comments.mjs"
   },
   "devDependencies": {

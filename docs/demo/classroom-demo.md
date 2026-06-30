@@ -21,6 +21,20 @@
 7. 打开 Mock Receiver，展示实际收到的转发 body。
 8. 如果需要展示失败路径，可临时把 workflow URL 改成不存在端口，再发送事件，查看失败和重试记录。
 
+## 真实 git 演示补充
+
+如果老师要求看到 git/GitHub 的实际使用，优先使用本地 git 演示，稳定且不依赖公网回调：
+
+```bash
+git add .
+git commit -m "demo: trigger webhook flow"
+pnpm demo:git-push <endpoint-slug> <endpoint-secret> .
+```
+
+脚本会读取最新 commit、当前分支、提交人和 remote 信息，组装成 GitHub push payload 并签名发送到 Webhook Flow。若当前分支不是 `main`，需要把 workflow filter 改成当前分支，或切到 `main` 演示。
+
+必须展示 GitHub 仓库网页 webhook 时，再使用 ngrok 或 Cloudflare Tunnel 暴露本地 API，并在 GitHub Settings -> Webhooks 配置 `<公网地址>/hooks/<slug>` 和 endpoint secret。
+
 ## 验收口径
 
 - 能跨 macOS、Linux、Windows 使用 Node.js/pnpm 本地运行。

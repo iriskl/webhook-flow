@@ -105,6 +105,7 @@ describe("Webhook Flow 控制台", () => {
     fireEvent.click(await screen.findByRole("button", { name: /创建 endpoint/ }));
     expect(await screen.findByText("whsec_once")).toBeInTheDocument();
     expect(screen.getByText("class-demo")).toBeInTheDocument();
+    expect(screen.getByText(/已创建 endpoint/)).toBeInTheDocument();
   });
 
   it("execution 详情展示原始 payload", async () => {

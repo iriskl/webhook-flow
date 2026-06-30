@@ -53,6 +53,11 @@ button:hover {
   color: var(--accent-strong);
 }
 
+button:disabled {
+  cursor: wait;
+  opacity: 0.62;
+}
+
 button.primary {
   background: var(--accent);
   color: #ffffff;
