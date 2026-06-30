@@ -124,6 +124,20 @@ WORKFLOW_MOCK_BASE_URL=http://mock-receiver:4001 pnpm verify:e2e
 6. 进入 Mock Receiver，展示收到的 HTTP 转发消息。
 7. 可切换监控告警或支付成功样例，演示同一平台可处理不同事件源。
 
+### 使用真实 git 提交演示
+
+如果课堂要求体现 git/GitHub 的实际使用，可以先在控制台创建 endpoint 并保存 workflow，然后在任意 git 仓库中提交一次改动，再把最新提交转换成 GitHub push 格式事件发送到平台：
+
+```bash
+git add .
+git commit -m "demo: trigger webhook flow"
+pnpm demo:git-push <endpoint-slug> <endpoint-secret> .
+```
+
+脚本会读取当前分支、最新 commit、remote.origin.url、提交人信息，生成 GitHub push payload，并按 endpoint secret 签名发送到 `/hooks/:slug`。默认 workflow 过滤 `refs/heads/main`，如果当前分支不是 `main`，请切到 main 分支演示，或把 workflow filter 改成当前分支。
+
+如果必须使用 GitHub 网页上的真实 Webhook 配置，需要先用 ngrok、Cloudflare Tunnel 或同类工具把本地 API 暴露为公网地址，再在 GitHub 仓库 Settings -> Webhooks 中配置 Payload URL 为 `<公网地址>/hooks/<slug>`，Secret 填 endpoint secret，Content type 选 `application/json`。
+
 ## 测试和质量检查
 
 ```bash
