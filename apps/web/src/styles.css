@@ -182,23 +182,6 @@ pre {
   margin: 0 0 4px;
 }
 
-.alert {
-  min-height: 40px;
-  display: flex;
-  align-items: center;
-  border: 1px solid #cbd5c9;
-  background: #f7faf4;
-  padding: 9px 12px;
-  border-radius: 7px;
-  margin-bottom: 16px;
-}
-
-.alert.error {
-  color: var(--danger);
-  border-color: #f0b4ad;
-  background: #fff5f4;
-}
-
 .grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(160px, 1fr));
@@ -264,6 +247,131 @@ pre {
   min-width: 0;
 }
 
+.workflowGuide {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.guideItem {
+  min-width: 0;
+  border: 1px solid var(--line);
+  background: #ffffff;
+  border-radius: 8px;
+  padding: 12px;
+}
+
+.guideItem.done {
+  border-color: #aadbb7;
+  background: #f4fff7;
+}
+
+.guideItem strong,
+.guideItem span {
+  display: block;
+}
+
+.guideItem span {
+  color: var(--muted);
+  font-size: 12px;
+  margin-top: 4px;
+}
+
+.workflowSelectors {
+  align-items: flex-end;
+  margin-top: 14px;
+}
+
+.workflowSelectors label {
+  display: grid;
+  gap: 6px;
+  flex: 1 1 220px;
+}
+
+.workflowSelectors span,
+.editorHeader {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.editorHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  margin: 14px 0 8px;
+}
+
+.workflowActions {
+  margin-top: 12px;
+}
+
+.statusPopup {
+  position: fixed;
+  top: 18px;
+  right: 18px;
+  z-index: 20;
+  max-width: min(420px, calc(100vw - 36px));
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  border: 1px solid #cbd5c9;
+  background: #f7faf4;
+  box-shadow: 0 14px 34px rgba(17, 26, 23, 0.18);
+  border-radius: 8px;
+  padding: 12px;
+}
+
+.statusPopup.error {
+  color: var(--danger);
+  border-color: #f0b4ad;
+  background: #fff5f4;
+}
+
+.statusPopup button {
+  min-height: 30px;
+}
+
+.flowRelation {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.flowRelation > * {
+  min-height: 38px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--line);
+  background: #ffffff;
+  border-radius: 7px;
+  padding: 7px 10px;
+  text-align: center;
+}
+
+.flowRelation strong {
+  color: #ffffff;
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.advancedDsl {
+  margin-top: 14px;
+}
+
+.advancedDsl summary {
+  cursor: pointer;
+  color: var(--accent-strong);
+  font-weight: 700;
+}
+
+.advancedDsl textarea {
+  margin-top: 10px;
+}
+
 table {
   width: 100%;
   border-collapse: collapse;
@@ -327,6 +435,71 @@ th {
   max-height: 260px;
 }
 
+.eventJson {
+  min-height: 180px;
+}
+
+.downstreamPanel {
+  display: grid;
+  gap: 16px;
+}
+
+.eventBuilder,
+.downstreamBuilder,
+.verifyBuilder {
+  display: grid;
+  gap: 10px;
+}
+
+.downstreamForm {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+  gap: 8px;
+}
+
+.targetList {
+  display: grid;
+  gap: 8px;
+  margin: 10px 0;
+}
+
+.targetGroup {
+  display: grid;
+  gap: 8px;
+}
+
+.targetGroup h3 {
+  margin: 0;
+  font-size: 14px;
+}
+
+.targetChoice {
+  min-width: 0;
+  min-height: 46px;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 9px;
+  border: 1px solid var(--line);
+  background: #ffffff;
+  border-radius: 7px;
+  padding: 8px 10px;
+}
+
+.targetChoice input {
+  margin: 0;
+}
+
+.targetChoice span {
+  font-weight: 700;
+}
+
+.targetChoice code {
+  color: var(--muted);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
 .timeline {
   display: grid;
   gap: 12px;
@@ -377,6 +550,15 @@ th {
   gap: 12px;
 }
 
+.messageGroup {
+  display: grid;
+  gap: 10px;
+}
+
+.messageGroup h3 {
+  margin: 0;
+}
+
 .message {
   border: 1px solid var(--line);
   border-radius: 7px;
@@ -397,7 +579,9 @@ th {
   }
 
   .grid,
-  .split {
+  .split,
+  .workflowGuide,
+  .flowRelation {
     grid-template-columns: 1fr;
   }
 
@@ -414,8 +598,21 @@ th {
   }
 
   .toolbar > *,
-  .formRow > * {
+  .formRow > *,
+  .downstreamForm > * {
     width: 100%;
+  }
+
+  .downstreamForm {
+    grid-template-columns: 1fr;
+  }
+
+  .targetChoice {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .targetChoice code {
+    grid-column: 2;
   }
 
   table,

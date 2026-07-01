@@ -14,7 +14,7 @@ describe("workflow DSL", () => {
   it("可按部署环境生成 mock receiver 目标地址", () => {
     const result = parseWorkflowDsl(buildDemoWorkflow("http://mock-receiver:4001/"));
     expect(result.ok).toBe(true);
-    expect(result.workflow?.steps[0]?.url).toBe("http://mock-receiver:4001/messages");
+    expect(result.workflow?.steps[0]?.url).toBe("http://mock-receiver:4001/messages/audit");
   });
 
   it("拒绝缺少 steps 的 DSL", () => {

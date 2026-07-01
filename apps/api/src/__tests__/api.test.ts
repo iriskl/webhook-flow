@@ -26,6 +26,22 @@ beforeEach(async () => {
 });
 
 describe("API endpoint 和 workflow", () => {
+  it("允许浏览器预检 PATCH endpoint 状态更新", async () => {
+    const app = buildApp();
+    const response = await app.inject({
+      method: "OPTIONS",
+      url: "/api/endpoints/demo",
+      headers: {
+        origin: "http://localhost:5173",
+        "access-control-request-method": "PATCH",
+        "access-control-request-headers": "content-type"
+      }
+    });
+    expect(response.statusCode).toBe(204);
+    expect(response.headers["access-control-allow-methods"]).toContain("PATCH");
+    await app.close();
+  });
+
   it("创建 endpoint 时返回一次性 secret，详情不返回 secret", async () => {
     const app = buildApp();
     const created = await app.inject({
@@ -54,7 +70,7 @@ describe("API endpoint 和 workflow", () => {
       payload: { endpointId: endpoint.id, dslText: defaultDemoWorkflow }
     });
     expect(workflow.statusCode).toBe(201);
-    expect(workflow.json().name).toBe("github-main-push");
+    expect(workflow.json().name).toBe("event-router-demo");
 
     const bad = await app.inject({
       method: "POST",
@@ -90,10 +106,8 @@ describe("Webhook 接收和执行", () => {
   });
 
   it("接收合法事件并执行 workflow", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async () => new Response(JSON.stringify({ received: true }), { status: 201 }))
-    );
+    const forward = vi.fn(async () => new Response(JSON.stringify({ received: true }), { status: 201 }));
+    vi.stubGlobal("fetch", forward);
     const app = buildApp();
     const endpoint = (
       await app.inject({ method: "POST", url: "/api/endpoints", payload: { name: "GitHub Demo" } })
@@ -113,6 +127,63 @@ describe("Webhook 接收和执行", () => {
     expect(accepted.statusCode).toBe(202);
     const executions = await app.inject({ method: "GET", url: "/api/executions" });
     expect(executions.json().executions[0].status).toBe("success");
+    expect(forward).toHaveBeenCalledTimes(2);
+    await app.close();
+  });
+
+  it("demo 发送支持自定义事件 payload", async () => {
+    const forward = vi.fn(async () => new Response(JSON.stringify({ received: true }), { status: 201 }));
+    vi.stubGlobal("fetch", forward);
+    const app = buildApp();
+    const endpoint = (
+      await app.inject({ method: "POST", url: "/api/endpoints", payload: { name: "GitHub Demo" } })
+    ).json();
+    await app.inject({
+      method: "POST",
+      url: "/api/workflows",
+      payload: { endpointId: endpoint.id, dslText: defaultDemoWorkflow }
+    });
+
+    const sent = await app.inject({
+      method: "POST",
+      url: "/api/demo/send-sample",
+      payload: {
+        endpointId: endpoint.id,
+        secret: endpoint.secret,
+        payload: { ...samplePayloads.githubPush.body, pusher: { name: "custom-user" } }
+      }
+    });
+    expect(sent.statusCode).toBe(200);
+    expect(sent.json().sample).toBe("自定义事件");
+    expect(forward).toHaveBeenCalledTimes(2);
+    await app.close();
+  });
+
+  it("监控告警和支付样例也会转发到下游", async () => {
+    const forward = vi.fn(async () => new Response(JSON.stringify({ received: true }), { status: 201 }));
+    vi.stubGlobal("fetch", forward);
+    const app = buildApp();
+    const endpoint = (
+      await app.inject({ method: "POST", url: "/api/endpoints", payload: { name: "GitHub Demo" } })
+    ).json();
+    await app.inject({
+      method: "POST",
+      url: "/api/workflows",
+      payload: { endpointId: endpoint.id, dslText: defaultDemoWorkflow }
+    });
+
+    for (const payload of [samplePayloads.alert.body, samplePayloads.payment.body]) {
+      const raw = JSON.stringify(payload);
+      await app.inject({
+        method: "POST",
+        url: endpoint.hookUrl,
+        headers: { "content-type": "application/json", [signatureHeaderName]: signPayload(endpoint.secret, raw) },
+        payload: raw
+      });
+    }
+    const executions = await app.inject({ method: "GET", url: "/api/executions" });
+    expect(executions.json().executions.map((item: { status: string }) => item.status)).toEqual(["success", "success"]);
+    expect(forward).toHaveBeenCalledTimes(2);
     await app.close();
   });
 });

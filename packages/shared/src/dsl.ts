@@ -73,24 +73,57 @@ export function parseWorkflowDsl(text: string, format: DslFormat = detectDslForm
 
 export function buildDemoWorkflow(mockBaseUrl = "http://localhost:4001"): string {
   const target = `${mockBaseUrl.replace(/\/$/, "")}/messages`;
-  return `name: github-main-push
+  return `name: event-router-demo
 trigger:
   endpoint: github-demo
-filter:
-  expr: "body.ref == 'refs/heads/main'"
 steps:
-  - name: notify-mock
+  - name: github-audit
     type: httpRequest
-    when: "body.repository.name != ''"
+    when: "body.ref == 'refs/heads/main'"
     method: POST
-    url: "${target}"
+    url: "${target}/audit"
     headers:
-      x-demo-source: webhook-flow
+      x-demo-source: github
+      x-demo-target: audit
     body:
-      text: "Repo {{body.repository.name}} pushed by {{body.pusher.name}}"
+      text: "GitHub repo {{body.repository.name}} pushed by {{body.pusher.name}}"
       ref: "{{body.ref}}"
+      repo: "{{body.repository.full_name}}"
+  - name: github-notify
+    type: httpRequest
+    when: "body.ref == 'refs/heads/main'"
+    method: POST
+    url: "${target}/notify"
+    headers:
+      x-demo-source: github
+      x-demo-target: notify
+    body:
+      text: "Notify team for {{body.repository.name}}"
+      repo: "{{body.repository.full_name}}"
+  - name: alert-forward
+    type: httpRequest
+    when: "body.level == 'critical'"
+    method: POST
+    url: "${target}/monitor"
+    headers:
+      x-demo-source: monitor
+    body:
+      text: "Alert {{body.service}}: {{body.message}}"
+      level: "{{body.level}}"
+      region: "{{body.region}}"
+  - name: payment-forward
+    type: httpRequest
+    when: "body.event == 'payment.succeeded'"
+    method: POST
+    url: "${target}/payment"
+    headers:
+      x-demo-source: payment
+    body:
+      text: "Payment success {{body.orderId}}"
+      amount: "{{body.amount}}"
+      currency: "{{body.currency}}"
     retry:
-      maxAttempts: 3
+      maxAttempts: 2
       backoffSeconds: 1
 `;
 }

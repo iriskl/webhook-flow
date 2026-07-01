@@ -48,25 +48,28 @@ docker compose up --build
 ## DSL 示例
 
 ```yaml
-name: github-main-push
+name: event-router-demo
 trigger:
   endpoint: github-demo
-filter:
-  expr: "body.ref == 'refs/heads/main'"
 steps:
-  - name: notify-mock
+  - name: github-audit
     type: httpRequest
-    when: "body.repository.name != ''"
+    when: "body.ref == 'refs/heads/main'"
     method: POST
-    url: "http://localhost:4001/messages"
+    url: "http://localhost:4001/messages/audit"
     headers:
-      x-demo-source: webhook-flow
+      x-demo-source: github
     body:
-      text: "Repo {{body.repository.name}} pushed by {{body.pusher.name}}"
-      ref: "{{body.ref}}"
-    retry:
-      maxAttempts: 3
-      backoffSeconds: 1
+      text: "GitHub repo {{body.repository.name}} pushed by {{body.pusher.name}}"
+  - name: payment-forward
+    type: httpRequest
+    when: "body.event == 'payment.succeeded'"
+    method: POST
+    url: "http://localhost:4001/messages/payment"
+    headers:
+      x-demo-source: payment
+    body:
+      text: "Payment success {{body.orderId}}"
 ```
 
 表达式限制：只能读取 `body`、`headers`、`event`，禁止执行任意 JavaScript。支持 `==`、`!=`、`>`、`>=`、`<`、`<=`，以及 `&&`、`||` 组合。
@@ -103,7 +106,7 @@ Docker Compose 场景下 API 容器访问 mock receiver 需要使用容器服务
 WORKFLOW_MOCK_BASE_URL=http://mock-receiver:4001 pnpm verify:e2e
 ```
 
-控制台默认 YAML 也区分浏览器访问地址和 API 执行地址：本地运行默认转发到 `http://localhost:4001/messages`，Docker Compose 构建前端时会注入 `VITE_WORKFLOW_MOCK_BASE_URL=http://mock-receiver:4001`，因此课堂演示可直接保存默认 workflow 并发送样例事件。
+控制台默认 YAML 也区分浏览器访问地址和 API 执行地址：本地运行默认转发到 `http://localhost:4001/messages/<target>`，Docker Compose 构建前端时会注入 `VITE_WORKFLOW_MOCK_BASE_URL=http://mock-receiver:4001`，因此课堂演示可直接保存默认 workflow 并发送样例事件。Mock Receiver 用 `/messages/audit`、`/messages/notify`、`/messages/monitor`、`/messages/payment` 模拟多个下游接收系统，并在控制台按目标路径分组展示。
 
 验收脚本会自动：
 
@@ -118,11 +121,11 @@ WORKFLOW_MOCK_BASE_URL=http://mock-receiver:4001 pnpm verify:e2e
 
 1. 打开控制台 `http://localhost:5173`，展示概览页统计和导航。
 2. 进入 Endpoints，创建 `GitHub Demo` endpoint，复制接收地址，保留一次性 secret。
-3. 进入 Workflows，选择 endpoint，使用默认 YAML，点击“校验”和“保存”。
-4. 在样例事件发送区选择 `GitHub push`，点击“发送样例事件”。
-5. 进入 Executions，打开最新执行详情，展示步骤时间线、状态、输入输出和错误原因。
-6. 进入 Mock Receiver，展示收到的 HTTP 转发消息。
-7. 可切换监控告警或支付成功样例，演示同一平台可处理不同事件源。
+3. 进入 Workflows，绑定 endpoint，在“事件输入”选择 `GitHub push` 或粘贴自定义 JSON。
+4. 在“下游输出”选择预设下游，或切到“自定义下游”新增目标，再点击“用选中下游生成 workflow”。
+5. 点击“保存为 workflow”，再点击“发送当前事件”。
+6. 进入 Executions，打开最新执行详情，展示步骤时间线、状态、输入输出和错误原因。
+7. 进入 Mock Receiver，展示按 `/messages/<target>` 分组的 HTTP 转发消息。
 
 ### 使用真实 git 提交演示
 
@@ -134,7 +137,7 @@ git commit -m "demo: trigger webhook flow"
 pnpm demo:git-push <endpoint-slug> <endpoint-secret> .
 ```
 
-脚本会读取当前分支、最新 commit、remote.origin.url、提交人信息，生成 GitHub push payload，并按 endpoint secret 签名发送到 `/hooks/:slug`。默认 workflow 过滤 `refs/heads/main`，如果当前分支不是 `main`，请切到 main 分支演示，或把 workflow filter 改成当前分支。
+脚本会读取当前分支、最新 commit、remote.origin.url、提交人信息，生成 GitHub push payload，并按 endpoint secret 签名发送到 `/hooks/:slug`。如果使用控制台向导生成的 workflow，事件会直接转发到勾选的下游，不依赖分支名；如果手写了带 `step.when` 的 GitHub 分支条件，请确保条件匹配当前分支。
 
 如果必须使用 GitHub 网页上的真实 Webhook 配置，需要先用 ngrok、Cloudflare Tunnel 或同类工具把本地 API 暴露为公网地址，再在 GitHub 仓库 Settings -> Webhooks 中配置 Payload URL 为 `<公网地址>/hooks/<slug>`，Secret 填 endpoint secret，Content type 选 `application/json`。
 
