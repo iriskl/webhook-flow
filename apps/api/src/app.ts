@@ -263,14 +263,14 @@ export function buildApp(): FastifyInstance {
   });
 
   app.post("/api/demo/send-sample", async (request) => {
-    const body = request.body as { endpointId?: string; sample?: keyof typeof samplePayloads; secret?: string };
+    const body = request.body as { endpointId?: string; sample?: keyof typeof samplePayloads; payload?: unknown; secret?: string };
     const endpoint = await prisma.endpoint.findUnique({ where: { id: body.endpointId ?? "" } });
     if (!endpoint) throw new AppError(404, "endpoint 不存在", "ENDPOINT_NOT_FOUND");
     if (!body.secret) {
       throw new AppError(400, "请提供 endpoint secret；如已丢失，请重新生成 secret", "SECRET_REQUIRED");
     }
     const sample = samplePayloads[body.sample ?? "githubPush"] ?? samplePayloads.githubPush;
-    const raw = JSON.stringify(sample.body);
+    const raw = JSON.stringify(body.payload ?? sample.body);
     const signature = signPayload(body.secret, raw);
     const response = await app.inject({
       method: "POST",
@@ -281,7 +281,7 @@ export function buildApp(): FastifyInstance {
     return {
       statusCode: response.statusCode,
       result: response.json(),
-      sample: sample.label
+      sample: body.payload === undefined ? sample.label : "自定义事件"
     };
   });
 

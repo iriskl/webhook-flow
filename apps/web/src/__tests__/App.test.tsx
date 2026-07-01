@@ -112,8 +112,45 @@ describe("Webhook Flow 控制台", () => {
   it("可进入 workflow 页面并看到校验按钮", async () => {
     render(<App />);
     fireEvent.click(await screen.findByRole("button", { name: /Workflows/ }));
-    expect(screen.getByText("Workflow DSL")).toBeInTheDocument();
-    expect(screen.getByText("校验")).toBeInTheDocument();
+    expect(screen.getByLabelText("Workflow 操作流程")).toBeInTheDocument();
+    expect(screen.getByLabelText("事件流关系")).toBeInTheDocument();
+    expect(screen.getByText("绑定和保存")).toBeInTheDocument();
+    expect(screen.getByText("高级配置")).toBeInTheDocument();
+    expect(screen.getByText("查看或手动编辑 DSL")).toBeInTheDocument();
+    expect(screen.getByText("事件输入")).toBeInTheDocument();
+    expect(screen.getByText("下游输出")).toBeInTheDocument();
+    expect(screen.getByText("预设下游")).toBeInTheDocument();
+    expect(screen.getByText("自定义下游")).toBeInTheDocument();
+  });
+
+  it("可新增下游并生成多下游 workflow", async () => {
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: /Workflows/ }));
+
+    fireEvent.change(screen.getByLabelText("下游名称"), { target: { value: "数据归档" } });
+    fireEvent.change(screen.getByLabelText("下游路径"), { target: { value: "archive" } });
+    fireEvent.click(screen.getByRole("button", { name: "新增下游" }));
+    expect(screen.getByText("数据归档")).toBeInTheDocument();
+    expect(screen.getByText("/messages/archive")).toBeInTheDocument();
+    await screen.findByText(/已新增下游/);
+
+    fireEvent.click(screen.getByRole("button", { name: "用选中下游生成 workflow" }));
+    await waitFor(() => expect(screen.getByDisplayValue(/name: custom-downstream-flow/)).toBeInTheDocument());
+    expect(screen.getByDisplayValue(/forward-audit/)).toBeInTheDocument();
+    expect(screen.getByDisplayValue(/forward-archive/)).toBeInTheDocument();
+    await new Promise((resolve) => setTimeout(resolve, 1100));
+    expect(screen.getByDisplayValue("新建或选择 workflow")).toBeInTheDocument();
+  });
+
+  it("支持自定义事件 payload", async () => {
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: /Workflows/ }));
+    fireEvent.change(screen.getByDisplayValue("GitHub push"), { target: { value: "custom" } });
+    expect(screen.getByLabelText("自定义事件 JSON")).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("自定义事件 JSON"), {
+      target: { value: '{ "event": "order.refunded", "orderId": "R-1" }' }
+    });
+    expect(screen.getByDisplayValue(/order.refunded/)).toBeInTheDocument();
   });
 
   it("创建 endpoint 后展示一次性 secret 和详情", async () => {
@@ -150,6 +187,14 @@ describe("Webhook Flow 控制台", () => {
     fireEvent.click(await screen.findByRole("button", { name: "详情" }));
     expect(await screen.findByText("事件 payload")).toBeInTheDocument();
     await waitFor(() => expect(screen.getByText(/refs\/heads\/main/)).toBeInTheDocument());
+  });
+
+  it("概览详情按钮会进入 execution 详情页", async () => {
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: "详情" }));
+    expect(await screen.findByRole("heading", { name: "Executions" })).toBeInTheDocument();
+    expect(await screen.findByText("事件 payload")).toBeInTheDocument();
+    expect(screen.getByText(/refs\/heads\/main/)).toBeInTheDocument();
   });
 
   it("mock receiver 展示 headers 和 body", async () => {

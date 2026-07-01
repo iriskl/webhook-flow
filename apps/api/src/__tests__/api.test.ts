@@ -131,6 +131,34 @@ describe("Webhook 接收和执行", () => {
     await app.close();
   });
 
+  it("demo 发送支持自定义事件 payload", async () => {
+    const forward = vi.fn(async () => new Response(JSON.stringify({ received: true }), { status: 201 }));
+    vi.stubGlobal("fetch", forward);
+    const app = buildApp();
+    const endpoint = (
+      await app.inject({ method: "POST", url: "/api/endpoints", payload: { name: "GitHub Demo" } })
+    ).json();
+    await app.inject({
+      method: "POST",
+      url: "/api/workflows",
+      payload: { endpointId: endpoint.id, dslText: defaultDemoWorkflow }
+    });
+
+    const sent = await app.inject({
+      method: "POST",
+      url: "/api/demo/send-sample",
+      payload: {
+        endpointId: endpoint.id,
+        secret: endpoint.secret,
+        payload: { ...samplePayloads.githubPush.body, pusher: { name: "custom-user" } }
+      }
+    });
+    expect(sent.statusCode).toBe(200);
+    expect(sent.json().sample).toBe("自定义事件");
+    expect(forward).toHaveBeenCalledTimes(2);
+    await app.close();
+  });
+
   it("监控告警和支付样例也会转发到下游", async () => {
     const forward = vi.fn(async () => new Response(JSON.stringify({ received: true }), { status: 201 }));
     vi.stubGlobal("fetch", forward);

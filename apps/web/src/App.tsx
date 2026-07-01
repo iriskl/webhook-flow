@@ -13,11 +13,12 @@ import {
   Shield,
   Workflow
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { buildDemoWorkflow, samplePayloads } from "@webhook-flow/shared/browser";
 import { apiGet, apiSend, mockDelete, mockGet } from "./api.js";
 
 type Page = "overview" | "endpoints" | "workflows" | "executions" | "mock";
+type EventChoice = keyof typeof samplePayloads | "custom";
 
 interface Endpoint {
   id: string;
@@ -72,6 +73,12 @@ interface MockMessage {
   receivedAt: string;
 }
 
+interface DownstreamTarget {
+  id: string;
+  name: string;
+  path: string;
+}
+
 const workflowMockBaseUrl = import.meta.env.VITE_WORKFLOW_MOCK_BASE_URL ?? "http://localhost:4001";
 
 const navItems: Array<{ page: Page; label: string; icon: typeof Activity }> = [
@@ -80,6 +87,13 @@ const navItems: Array<{ page: Page; label: string; icon: typeof Activity }> = [
   { page: "workflows", label: "Workflows", icon: Workflow },
   { page: "executions", label: "Executions", icon: GitBranch },
   { page: "mock", label: "Mock Receiver", icon: Boxes }
+];
+
+const defaultDownstreams: DownstreamTarget[] = [
+  { id: "audit", name: "GitHub 审计", path: "/messages/audit" },
+  { id: "notify", name: "GitHub 通知", path: "/messages/notify" },
+  { id: "monitor", name: "监控告警", path: "/messages/monitor" },
+  { id: "payment", name: "支付成功", path: "/messages/payment" }
 ];
 
 export function App() {
@@ -94,7 +108,15 @@ export function App() {
   const [workflowText, setWorkflowText] = useState(buildDemoWorkflow(workflowMockBaseUrl));
   const [selectedEndpointId, setSelectedEndpointId] = useState("");
   const [selectedWorkflowId, setSelectedWorkflowId] = useState("");
-  const [sampleKey, setSampleKey] = useState<keyof typeof samplePayloads>("githubPush");
+  const workflowDraftRef = useRef(false);
+  const [downstreamTargets, setDownstreamTargets] = useState(defaultDownstreams);
+  const [selectedDownstreamIds, setSelectedDownstreamIds] = useState(["audit", "notify"]);
+  const [downstreamName, setDownstreamName] = useState("研发通知");
+  const [downstreamPath, setDownstreamPath] = useState("/messages/dev");
+  const [sampleKey, setSampleKey] = useState<EventChoice>("githubPush");
+  const [customEventText, setCustomEventText] = useState(
+    JSON.stringify({ event: "custom.created", title: "自定义事件", userId: "user_demo" }, null, 2)
+  );
   const [executionStatusFilter, setExecutionStatusFilter] = useState("all");
   const [notice, setNotice] = useState("准备就绪");
   const [error, setError] = useState("");
@@ -123,7 +145,7 @@ export function App() {
       setExecutions(executionData.executions);
       setMockMessages(mockData.messages);
       setSelectedEndpointId((current) => current || endpointData.endpoints[0]?.id || "");
-      setSelectedWorkflowId((current) => current || workflowData.workflows[0]?.id || "");
+      setSelectedWorkflowId((current) => (workflowDraftRef.current ? current : current || workflowData.workflows[0]?.id || ""));
       if (!options.silent) setNotice("数据已刷新");
     } catch (err) {
       if (!options.silent) setError(err instanceof Error ? err.message : String(err));
@@ -174,8 +196,39 @@ export function App() {
 
   function selectWorkflow(id: string) {
     setSelectedWorkflowId(id);
+    workflowDraftRef.current = false;
     const workflow = workflows.find((item) => item.id === id);
     if (workflow) setWorkflowText(workflow.dslText);
+  }
+
+  function selectedDownstreams() {
+    return downstreamTargets.filter((target) => selectedDownstreamIds.includes(target.id));
+  }
+
+  function toggleDownstream(id: string) {
+    setSelectedDownstreamIds((current) => (current.includes(id) ? current.filter((item) => item !== id) : [...current, id]));
+  }
+
+  function addDownstream() {
+    const name = downstreamName.trim();
+    if (!name) throw new Error("下游名称不能为空");
+    const path = normalizeDownstreamPath(downstreamPath);
+    const id = path.split("/").pop() || `target-${Date.now()}`;
+    if (downstreamTargets.some((target) => target.path === path)) throw new Error("下游路径已存在");
+    setDownstreamTargets((current) => [...current, { id, name, path }]);
+    setSelectedDownstreamIds((current) => [...current, id]);
+    setDownstreamName("");
+    setDownstreamPath("/messages/");
+    setNotice(`已新增下游：${name}`);
+  }
+
+  function applyDownstreamsToWorkflow() {
+    const targets = selectedDownstreams();
+    if (targets.length === 0) throw new Error("请至少选择一个下游");
+    setSelectedWorkflowId("");
+    workflowDraftRef.current = true;
+    setWorkflowText(buildWorkflowForDownstreams(targets, workflowMockBaseUrl));
+    setNotice(`已生成 ${targets.length} 个下游的 workflow DSL`);
   }
 
   async function saveWorkflow() {
@@ -185,6 +238,7 @@ export function App() {
       dslText: workflowText
     });
     setSelectedWorkflowId(result.id);
+    workflowDraftRef.current = false;
     await refreshAll({ silent: true });
     setNotice(`已保存 workflow：${result.name}`);
   }
@@ -199,7 +253,7 @@ export function App() {
   async function testWorkflow() {
     if (!selectedWorkflowId) throw new Error("请先选择 workflow");
     const result = await apiSend(`/api/workflows/${selectedWorkflowId}/test`, {
-      payload: samplePayloads[sampleKey].body
+      payload: currentEventPayload(sampleKey, customEventText)
     });
     setNotice(`测试结果：${JSON.stringify(result).slice(0, 160)}`);
   }
@@ -211,14 +265,16 @@ export function App() {
       setError("缺少 endpoint secret，请创建 endpoint 后立即发送，或重新生成 secret");
       return;
     }
-    await apiSend("/api/demo/send-sample", { endpointId: selectedEndpointId, sample: sampleKey, secret });
+    const payload = sampleKey === "custom" ? currentEventPayload(sampleKey, customEventText) : undefined;
+    await apiSend("/api/demo/send-sample", { endpointId: selectedEndpointId, sample: sampleKey === "custom" ? "githubPush" : sampleKey, payload, secret });
     await refreshAll({ silent: true });
-    setNotice(`已发送样例事件：${samplePayloads[sampleKey].label}`);
+    setNotice(`已发送事件：${eventLabel(sampleKey)}`);
   }
 
   async function openExecution(id: string) {
     const detail = await apiGet<ExecutionItem>(`/api/executions/${id}`);
     setSelectedExecution(detail);
+    setPage("executions");
     setNotice(`已打开 execution：${id.slice(0, 8)}`);
   }
 
@@ -226,6 +282,11 @@ export function App() {
     await mockDelete("/messages");
     await refreshAll({ silent: true });
     setNotice("mock receiver 消息已清空");
+  }
+
+  function dismissStatus() {
+    setError("");
+    setNotice("准备就绪");
   }
 
   async function copyHookUrl(hookUrl: string) {
@@ -286,7 +347,7 @@ export function App() {
           </button>
         </header>
 
-        {error ? <div className="alert error">{error}</div> : <div className="alert">{notice}</div>}
+        <StatusPopup message={error || notice} kind={error ? "error" : "info"} onDismiss={dismissStatus} />
 
         {page === "overview" && (
           <section className="grid">
@@ -373,50 +434,87 @@ export function App() {
         )}
 
         {page === "workflows" && (
-          <section className="split">
-            <div className="panel">
-              <h2>Workflow DSL</h2>
-              <div className="formRow">
-                <select value={selectedEndpointId} onChange={(event) => setSelectedEndpointId(event.target.value)}>
-                  <option value="">选择 endpoint</option>
-                  {endpoints.map((endpoint) => (
-                    <option key={endpoint.id} value={endpoint.id}>
-                      {endpoint.name}
-                    </option>
-                  ))}
-                </select>
-                <select value={selectedWorkflowId} onChange={(event) => selectWorkflow(event.target.value)}>
-                  <option value="">选择 workflow</option>
-                  {workflows.map((workflow) => (
-                    <option key={workflow.id} value={workflow.id}>
-                      {workflow.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <textarea value={workflowText} onChange={(event) => setWorkflowText(event.target.value)} />
-              <div className="toolbar">
-                <button disabled={isBusy} onClick={() => void runAction("校验 DSL", validateWorkflow)}>
-                  <FlaskConical size={16} />
-                  校验
-                </button>
-                <button disabled={isBusy} onClick={() => void runAction("保存 workflow", saveWorkflow)}>
-                  <Save size={16} />
-                  保存
-                </button>
-                <button disabled={isBusy} onClick={() => void runAction("测试 workflow", testWorkflow)}>
-                  <Play size={16} />
-                  测试
-                </button>
-              </div>
+          <section className="stack">
+            <WorkflowGuide hasEndpoint={Boolean(activeEndpoint)} hasWorkflow={Boolean(selectedWorkflowId)} />
+            <div className="flowRelation" aria-label="事件流关系">
+              <span>事件 payload</span>
+              <strong>生成 workflow</strong>
+              <span>转发到勾选下游</span>
+              <span>Execution / Mock Receiver 验收</span>
             </div>
-            <DemoSender
-              activeEndpoint={activeEndpoint}
+            <section className="panel">
+              <div className="panelHeader">
+                <div>
+                  <h2>绑定和保存</h2>
+                  <p className="muted">先绑定 endpoint，再用下方向导生成 workflow，最后保存。</p>
+                </div>
+              </div>
+              <div className="formRow workflowSelectors">
+                <label>
+                  <span>绑定 endpoint</span>
+                  <select value={selectedEndpointId} onChange={(event) => setSelectedEndpointId(event.target.value)}>
+                    <option value="">选择 endpoint</option>
+                    {endpoints.map((endpoint) => (
+                      <option key={endpoint.id} value={endpoint.id}>
+                        {endpoint.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  <span>已有 workflow</span>
+                  <select value={selectedWorkflowId} onChange={(event) => selectWorkflow(event.target.value)}>
+                    <option value="">新建或选择 workflow</option>
+                    {workflows.map((workflow) => (
+                      <option key={workflow.id} value={workflow.id}>
+                        {workflow.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <button className="primary" disabled={isBusy} onClick={() => void runAction("保存 workflow", saveWorkflow)}>
+                  <Save size={16} />
+                  保存为 workflow
+                </button>
+              </div>
+            </section>
+              <DemoSender
+                activeEndpoint={activeEndpoint}
+                downstreamTargets={downstreamTargets}
+                selectedDownstreamIds={selectedDownstreamIds}
+                downstreamName={downstreamName}
+              downstreamPath={downstreamPath}
+              onDownstreamNameChange={setDownstreamName}
+              onDownstreamPathChange={setDownstreamPath}
+              onAddDownstream={() => runAction("新增下游", async () => addDownstream())}
+              onToggleDownstream={toggleDownstream}
+              onApplyDownstreams={() => runAction("生成 workflow DSL", async () => applyDownstreamsToWorkflow())}
               sampleKey={sampleKey}
               onSampleChange={setSampleKey}
-              onSend={() => runAction("发送样例事件", sendSample)}
+              customEventText={customEventText}
+              onCustomEventTextChange={setCustomEventText}
+              onSend={() => runAction("发送当前事件", sendSample)}
+              onOpenMock={() => setPage("mock")}
               disabled={isBusy}
             />
+            <section className="panel">
+              <h2>高级配置</h2>
+              <p className="muted">通常不用手改。只有需要自定义匹配条件、Header 或重试策略时再展开。</p>
+              <details className="advancedDsl">
+                <summary>查看或手动编辑 DSL</summary>
+                <textarea value={workflowText} onChange={(event) => setWorkflowText(event.target.value)} />
+                <div className="toolbar workflowActions">
+                  <button disabled={isBusy} onClick={() => void runAction("校验 DSL", validateWorkflow)}>
+                    <FlaskConical size={16} />
+                    校验 DSL
+                  </button>
+                  <button disabled={isBusy} onClick={() => void runAction("测试 workflow", testWorkflow)}>
+                    <Play size={16} />
+                    测试匹配
+                  </button>
+                </div>
+              </details>
+            </section>
           </section>
         )}
 
@@ -514,35 +612,184 @@ function EndpointDetail({ endpoint, secret }: { endpoint?: Endpoint; secret?: st
   );
 }
 
+function WorkflowGuide({ hasEndpoint, hasWorkflow }: { hasEndpoint: boolean; hasWorkflow: boolean }) {
+  return (
+    <div className="workflowGuide" aria-label="Workflow 操作流程">
+      <div className={hasEndpoint ? "guideItem done" : "guideItem"}>
+        <strong>1. 绑定 endpoint</strong>
+        <span>没有 endpoint 先去 Endpoints 创建。</span>
+      </div>
+      <div className={hasWorkflow ? "guideItem done" : "guideItem"}>
+        <strong>2. 准备事件</strong>
+        <span>选择样例或粘贴自定义 JSON。</span>
+      </div>
+      <div className="guideItem">
+        <strong>3. 配置下游</strong>
+        <span>新增目标，勾选一个或多个下游。</span>
+      </div>
+      <div className="guideItem">
+        <strong>4. 生成并验收</strong>
+        <span>生成 workflow、保存，再发送当前事件。</span>
+      </div>
+    </div>
+  );
+}
+
+function StatusPopup({
+  message,
+  kind,
+  onDismiss
+}: {
+  message: string;
+  kind: "info" | "error";
+  onDismiss: () => void;
+}) {
+  if (message === "准备就绪") return null;
+  return (
+    <div className={`statusPopup ${kind}`} role={kind === "error" ? "alert" : "status"}>
+      <span>{message}</span>
+      <button onClick={onDismiss}>知道了</button>
+    </div>
+  );
+}
+
 function DemoSender({
   activeEndpoint,
+  downstreamTargets,
+  selectedDownstreamIds,
+  downstreamName,
+  downstreamPath,
+  onDownstreamNameChange,
+  onDownstreamPathChange,
+  onAddDownstream,
+  onToggleDownstream,
+  onApplyDownstreams,
   sampleKey,
   onSampleChange,
+  customEventText,
+  onCustomEventTextChange,
   onSend,
+  onOpenMock,
   disabled
 }: {
   activeEndpoint?: Endpoint;
-  sampleKey: keyof typeof samplePayloads;
-  onSampleChange: (key: keyof typeof samplePayloads) => void;
+  downstreamTargets: DownstreamTarget[];
+  selectedDownstreamIds: string[];
+  downstreamName: string;
+  downstreamPath: string;
+  onDownstreamNameChange: (value: string) => void;
+  onDownstreamPathChange: (value: string) => void;
+  onAddDownstream: () => Promise<void>;
+  onToggleDownstream: (id: string) => void;
+  onApplyDownstreams: () => Promise<void>;
+  sampleKey: EventChoice;
+  onSampleChange: (key: EventChoice) => void;
+  customEventText: string;
+  onCustomEventTextChange: (value: string) => void;
   onSend: () => Promise<void>;
+  onOpenMock: () => void;
   disabled?: boolean;
 }) {
+  const presetTargets = downstreamTargets.filter((target) => defaultDownstreams.some((item) => item.id === target.id));
+  const customTargets = downstreamTargets.filter((target) => !defaultDownstreams.some((item) => item.id === target.id));
+
   return (
-    <div className="panel">
-      <h2>样例事件发送</h2>
-      <p className="muted">目标 endpoint：{activeEndpoint?.name ?? "未选择"}</p>
-      <select value={sampleKey} onChange={(event) => onSampleChange(event.target.value as keyof typeof samplePayloads)}>
-        {Object.entries(samplePayloads).map(([key, value]) => (
-          <option key={key} value={key}>
-            {value.label}
-          </option>
-        ))}
-      </select>
-      <pre className="sample">{JSON.stringify(samplePayloads[sampleKey].body, null, 2)}</pre>
-      <button className="primary" disabled={disabled} onClick={() => void onSend()}>
-        <Send size={16} />
-        发送样例事件
-      </button>
+    <div className="panel downstreamPanel">
+      <section className="eventBuilder">
+        <h2>事件输入</h2>
+        <p className="muted">这里决定发什么事件；workflow 会把这个 payload 转发给勾选的下游。</p>
+        <select value={sampleKey} onChange={(event) => onSampleChange(event.target.value as EventChoice)}>
+          {Object.entries(samplePayloads).map(([key, value]) => (
+            <option key={key} value={key}>
+              {value.label}
+            </option>
+          ))}
+          <option value="custom">自定义事件</option>
+        </select>
+        {sampleKey === "custom" ? (
+          <textarea
+            className="eventJson"
+            aria-label="自定义事件 JSON"
+            value={customEventText}
+            onChange={(event) => onCustomEventTextChange(event.target.value)}
+          />
+        ) : (
+          <pre className="sample">{JSON.stringify(samplePayloads[sampleKey].body, null, 2)}</pre>
+        )}
+      </section>
+
+      <section className="downstreamBuilder">
+        <h2>下游输出</h2>
+        <p className="muted">目标 endpoint：{activeEndpoint?.name ?? "未选择"}；预设和自定义下游可以一起勾选。</p>
+        <section className="targetGroup">
+          <h3>预设下游</h3>
+          <div className="targetList" aria-label="预设下游">
+            {presetTargets.map((target) => (
+            <label key={target.id} className="targetChoice">
+              <input
+                type="checkbox"
+                checked={selectedDownstreamIds.includes(target.id)}
+                onChange={() => onToggleDownstream(target.id)}
+              />
+              <span>{target.name}</span>
+              <code>{target.path}</code>
+            </label>
+          ))}
+          </div>
+        </section>
+        <section className="targetGroup">
+          <h3>自定义下游</h3>
+          {customTargets.length === 0 ? <p className="muted">还没有自定义下游，先新增一个。</p> : null}
+          {customTargets.length > 0 ? (
+            <div className="targetList" aria-label="自定义下游">
+              {customTargets.map((target) => (
+                <label key={target.id} className="targetChoice">
+                  <input
+                    type="checkbox"
+                    checked={selectedDownstreamIds.includes(target.id)}
+                    onChange={() => onToggleDownstream(target.id)}
+                  />
+                  <span>{target.name}</span>
+                  <code>{target.path}</code>
+                </label>
+              ))}
+            </div>
+          ) : null}
+          <div className="downstreamForm">
+            <input
+              aria-label="下游名称"
+              value={downstreamName}
+              onChange={(event) => onDownstreamNameChange(event.target.value)}
+              placeholder="下游名称"
+            />
+            <input
+              aria-label="下游路径"
+              value={downstreamPath}
+              onChange={(event) => onDownstreamPathChange(event.target.value)}
+              placeholder="/messages/dev"
+            />
+            <button disabled={disabled} onClick={() => void onAddDownstream()}>
+              新增下游
+            </button>
+          </div>
+        </section>
+        <button disabled={disabled} onClick={() => void onApplyDownstreams()}>
+          <Workflow size={16} />
+          用选中下游生成 workflow
+        </button>
+      </section>
+
+      <section className="verifyBuilder">
+        <h2>验收</h2>
+        <button className="primary" disabled={disabled} onClick={() => void onSend()}>
+          <Send size={16} />
+          发送当前事件
+        </button>
+        <button disabled={disabled} onClick={onOpenMock}>
+          <Boxes size={16} />
+          查看下游消息
+        </button>
+      </section>
     </div>
   );
 }
@@ -630,6 +877,53 @@ function groupMockMessages(messages: MockMessage[]) {
     groups.set(target, [...(groups.get(target) ?? []), message]);
   }
   return [...groups.entries()];
+}
+
+function normalizeDownstreamPath(value: string) {
+  const raw = value.trim().replace(/^\/+/, "");
+  const slug = raw
+    .replace(/^messages\/?/, "")
+    .replace(/[^a-zA-Z0-9_-]/g, "-")
+    .replace(/^-+|-+$/g, "");
+  if (!slug) throw new Error("下游路径不能为空");
+  return `/messages/${slug}`;
+}
+
+function buildWorkflowForDownstreams(targets: DownstreamTarget[], mockBaseUrl: string) {
+  const base = mockBaseUrl.replace(/\/$/, "");
+  const steps = targets
+    .map((target) => {
+      const targetName = target.path.split("/").pop() || target.id;
+      return `  - name: forward-${targetName}
+    type: httpRequest
+    method: POST
+    url: "${base}${target.path}"
+    headers:
+      x-demo-target: ${targetName}
+    body:
+      target: "${target.name}"
+      payload: "{{body}}"`;
+    })
+    .join("\n");
+  return `name: custom-downstream-flow
+trigger:
+  endpoint: custom-demo
+steps:
+${steps}
+`;
+}
+
+function currentEventPayload(key: EventChoice, customText: string) {
+  if (key !== "custom") return samplePayloads[key].body;
+  try {
+    return JSON.parse(customText);
+  } catch {
+    throw new Error("自定义事件 JSON 不合法");
+  }
+}
+
+function eventLabel(key: EventChoice) {
+  return key === "custom" ? "自定义事件" : samplePayloads[key].label;
 }
 
 function metricLabel(key: string) {
