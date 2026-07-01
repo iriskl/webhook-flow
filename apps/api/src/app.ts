@@ -12,7 +12,7 @@ import {
 import { getPrisma } from "./db/client.js";
 import { fromJsonText, toJsonText } from "./db/json.js";
 import { AppError, sendError } from "./services/errors.js";
-import { createExecutionsForEvent, processDueRetryJobs } from "./services/executor.js";
+import { createExecutionForWorkflowEvent, createExecutionsForEvent, processDueRetryJobs } from "./services/executor.js";
 import { randomSuffix, slugifyName } from "./services/slug.js";
 import { previewWorkflow, validateWorkflowText } from "./services/workflow-preview.js";
 
@@ -262,15 +262,36 @@ export function buildApp(): FastifyInstance {
     return serializeExecutionDetail(execution);
   });
 
-  app.post("/api/demo/send-sample", async (request) => {
-    const body = request.body as { endpointId?: string; sample?: keyof typeof samplePayloads; payload?: unknown; secret?: string };
+  app.post("/api/demo/send-sample", async (request, reply) => {
+    const body = request.body as { endpointId?: string; workflowId?: string; sample?: keyof typeof samplePayloads; payload?: unknown; secret?: string };
+    const sample = samplePayloads[body.sample ?? "githubPush"] ?? samplePayloads.githubPush;
+    const payload = body.payload ?? sample.body;
+    if (body.workflowId) {
+      const workflow = await prisma.workflow.findUnique({ where: { id: body.workflowId }, include: { endpoint: true } });
+      if (!workflow) throw new AppError(404, "workflow 不存在", "WORKFLOW_NOT_FOUND");
+      if (!workflow.enabled) throw new AppError(403, "workflow 已停用", "WORKFLOW_DISABLED");
+      if (!workflow.endpoint.enabled) throw new AppError(403, "endpoint 已停用", "ENDPOINT_DISABLED");
+      const event = await prisma.event.create({
+        data: {
+          endpointId: workflow.endpointId,
+          headersJson: toJsonText({ "x-demo-source": "console" }),
+          payloadJson: toJsonText(payload),
+          sourceIp: request.ip
+        }
+      });
+      reply.status(202);
+      return {
+        statusCode: 202,
+        result: await createExecutionForWorkflowEvent(prisma, event, workflow.id),
+        sample: body.payload === undefined ? sample.label : "自定义事件"
+      };
+    }
     const endpoint = await prisma.endpoint.findUnique({ where: { id: body.endpointId ?? "" } });
     if (!endpoint) throw new AppError(404, "endpoint 不存在", "ENDPOINT_NOT_FOUND");
     if (!body.secret) {
       throw new AppError(400, "请提供 endpoint secret；如已丢失，请重新生成 secret", "SECRET_REQUIRED");
     }
-    const sample = samplePayloads[body.sample ?? "githubPush"] ?? samplePayloads.githubPush;
-    const raw = JSON.stringify(body.payload ?? sample.body);
+    const raw = JSON.stringify(payload);
     const signature = signPayload(body.secret, raw);
     const response = await app.inject({
       method: "POST",

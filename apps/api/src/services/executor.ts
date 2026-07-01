@@ -32,6 +32,18 @@ export async function createExecutionsForEvent(
   return { eventId: event.id, executionIds };
 }
 
+export async function createExecutionForWorkflowEvent(
+  prisma: PrismaClient,
+  event: Event,
+  workflowId: string
+): Promise<ExecuteEventResult> {
+  const execution = await prisma.execution.create({
+    data: { eventId: event.id, workflowId, status: "pending" }
+  });
+  await runExecution(prisma, execution.id);
+  return { eventId: event.id, executionIds: [execution.id] };
+}
+
 export async function runExecution(prisma: PrismaClient, executionId: string): Promise<void> {
   const execution = await prisma.execution.findUnique({
     where: { id: executionId },

@@ -106,6 +106,10 @@ pre {
 }
 
 .sidebar {
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  overflow-y: auto;
   background: #111a17;
   color: #f1f5ef;
   padding: 22px 14px;
@@ -247,34 +251,14 @@ pre {
   min-width: 0;
 }
 
-.workflowGuide {
+.workflowEditor {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 18px;
+}
+
+.workflowSection {
+  display: grid;
   gap: 10px;
-}
-
-.guideItem {
-  min-width: 0;
-  border: 1px solid var(--line);
-  background: #ffffff;
-  border-radius: 8px;
-  padding: 12px;
-}
-
-.guideItem.done {
-  border-color: #aadbb7;
-  background: #f4fff7;
-}
-
-.guideItem strong,
-.guideItem span {
-  display: block;
-}
-
-.guideItem span {
-  color: var(--muted);
-  font-size: 12px;
-  margin-top: 4px;
 }
 
 .workflowSelectors {
@@ -286,6 +270,11 @@ pre {
   display: grid;
   gap: 6px;
   flex: 1 1 220px;
+}
+
+.workflowSelectors button {
+  align-self: flex-end;
+  min-height: 39px;
 }
 
 .workflowSelectors span,
@@ -334,32 +323,8 @@ pre {
   min-height: 30px;
 }
 
-.flowRelation {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 8px;
-}
-
-.flowRelation > * {
-  min-height: 38px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border: 1px solid var(--line);
-  background: #ffffff;
-  border-radius: 7px;
-  padding: 7px 10px;
-  text-align: center;
-}
-
-.flowRelation strong {
-  color: #ffffff;
-  background: var(--accent);
-  border-color: var(--accent);
-}
-
 .advancedDsl {
-  margin-top: 14px;
+  margin-top: 0;
 }
 
 .advancedDsl summary {
@@ -444,6 +409,42 @@ th {
   gap: 16px;
 }
 
+.workflowSaveBar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-top: 1px solid var(--line);
+  padding-top: 14px;
+}
+
+.workflowSaveBar span {
+  color: var(--muted);
+}
+
+.modalBackdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  display: grid;
+  place-items: center;
+  background: rgba(17, 26, 23, 0.35);
+  padding: 18px;
+}
+
+.modal {
+  width: min(420px, 100%);
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: 0 18px 42px rgba(17, 26, 23, 0.24);
+  padding: 18px;
+}
+
+.modal h2 {
+  margin: 0;
+}
+
 .eventBuilder,
 .downstreamBuilder,
 .verifyBuilder {
@@ -500,6 +501,22 @@ th {
   overflow-wrap: anywhere;
 }
 
+.removableTarget {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.removableTarget label {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 9px;
+}
+
+.removableTarget button {
+  min-height: 30px;
+}
+
 .timeline {
   display: grid;
   gap: 12px;
@@ -511,10 +528,23 @@ th {
   padding: 10px 0 10px 12px;
 }
 
+.step.skipped {
+  border-left-color: var(--line);
+}
+
 .step div {
   display: flex;
   justify-content: space-between;
   gap: 10px;
+}
+
+.skippedSteps {
+  margin-top: 16px;
+}
+
+.skippedSteps summary {
+  cursor: pointer;
+  color: var(--muted);
 }
 
 .detailPanel dl {
@@ -579,9 +609,7 @@ th {
   }
 
   .grid,
-  .split,
-  .workflowGuide,
-  .flowRelation {
+  .split {
     grid-template-columns: 1fr;
   }
 
@@ -607,8 +635,17 @@ th {
     grid-template-columns: 1fr;
   }
 
+  .workflowSaveBar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
   .targetChoice {
     grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .removableTarget {
+    grid-template-columns: minmax(0, 1fr) auto;
   }
 
   .targetChoice code {

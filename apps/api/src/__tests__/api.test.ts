@@ -159,6 +159,47 @@ describe("Webhook 接收和执行", () => {
     await app.close();
   });
 
+  it("demo 发送指定 workflow 时只创建该 workflow 的 execution", async () => {
+    const forward = vi.fn(async () => new Response(JSON.stringify({ received: true }), { status: 201 }));
+    vi.stubGlobal("fetch", forward);
+    const app = buildApp();
+    const endpoint = (
+      await app.inject({ method: "POST", url: "/api/endpoints", payload: { name: "GitHub Demo" } })
+    ).json();
+    const auditWorkflow = (
+      await app.inject({
+        method: "POST",
+        url: "/api/workflows",
+        payload: {
+          endpointId: endpoint.id,
+          dslText: 'name: audit-only\ntrigger:\n  endpoint: demo\nsteps:\n  - name: forward-audit\n    type: httpRequest\n    url: "http://localhost:4001/messages/audit"\n'
+        }
+      })
+    ).json();
+    await app.inject({
+      method: "POST",
+      url: "/api/workflows",
+      payload: {
+        endpointId: endpoint.id,
+        dslText: 'name: notify-only\ntrigger:\n  endpoint: demo\nsteps:\n  - name: forward-notify\n    type: httpRequest\n    url: "http://localhost:4001/messages/notify"\n'
+      }
+    });
+
+    const sent = await app.inject({
+      method: "POST",
+      url: "/api/demo/send-sample",
+      payload: { workflowId: auditWorkflow.id, sample: "githubPush" }
+    });
+
+    expect(sent.statusCode).toBe(202);
+    expect(sent.json().result.executionIds).toHaveLength(1);
+    expect(forward).toHaveBeenCalledTimes(1);
+    expect(String(forward.mock.calls[0]?.[0])).toContain("/messages/audit");
+    const executions = await app.inject({ method: "GET", url: "/api/executions" });
+    expect(executions.json().executions.map((item: { workflowName: string }) => item.workflowName)).toEqual(["audit-only"]);
+    await app.close();
+  });
+
   it("监控告警和支付样例也会转发到下游", async () => {
     const forward = vi.fn(async () => new Response(JSON.stringify({ received: true }), { status: 201 }));
     vi.stubGlobal("fetch", forward);

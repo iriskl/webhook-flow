@@ -4,28 +4,36 @@ import { App } from "../App.js";
 
 const mockFetch = vi.fn();
 let endpointEnabled = true;
+let savedWorkflowText = "";
+let sentDemoBody: any = null;
+let savedWorkflowMethod = "";
 
 const workflows = [
   {
     id: "workflow-new",
     name: "新工作流",
     endpointId: "endpoint-1",
-    dslText: "name: new-workflow\ntrigger:\n  endpoint: class-demo\nsteps: []\n",
+    dslText: 'name: new-workflow\ntrigger:\n  endpoint: class-demo\nsteps:\n  - name: forward-new\n    type: httpRequest\n    url: "http://localhost:4001/messages/new"\n',
     dslFormat: "yaml",
-    enabled: true
+    enabled: true,
+    endpoint: { id: "endpoint-1", name: "课堂 Demo", slug: "class-demo", hookUrl: "/hooks/class-demo", enabled: true, createdAt: "2026-06-05T00:00:00.000Z" }
   },
   {
     id: "workflow-old",
     name: "旧工作流",
     endpointId: "endpoint-1",
-    dslText: "name: old-workflow\ntrigger:\n  endpoint: class-demo\nsteps: []\n",
+    dslText: 'name: old-workflow\ntrigger:\n  endpoint: class-demo\nsteps:\n  - name: forward-old\n    type: httpRequest\n    url: "http://localhost:4001/messages/old"\n',
     dslFormat: "yaml",
-    enabled: true
+    enabled: true,
+    endpoint: { id: "endpoint-1", name: "课堂 Demo", slug: "class-demo", hookUrl: "/hooks/class-demo", enabled: true, createdAt: "2026-06-05T00:00:00.000Z" }
   }
 ];
 
 beforeEach(() => {
   endpointEnabled = true;
+  savedWorkflowText = "";
+  sentDemoBody = null;
+  savedWorkflowMethod = "";
   mockFetch.mockReset();
   vi.stubGlobal("fetch", mockFetch);
   mockFetch.mockImplementation((url: string, init?: RequestInit) => {
@@ -49,7 +57,28 @@ beforeEach(() => {
         endpoints: [endpoint(endpointEnabled)]
       });
     }
+    if (url.includes("/api/workflows") && init?.method === "POST") {
+      savedWorkflowText = String(JSON.parse(String(init.body)).dslText);
+      savedWorkflowMethod = "POST";
+      return json({
+        id: "workflow-saved",
+        name: "custom-downstream-flow",
+        endpointId: "endpoint-1",
+        dslText: savedWorkflowText,
+        dslFormat: "yaml",
+        enabled: true
+      });
+    }
+    if (url.includes("/api/workflows/workflow-old") && init?.method === "PUT") {
+      savedWorkflowText = String(JSON.parse(String(init.body)).dslText);
+      savedWorkflowMethod = "PUT";
+      return json({ ...workflows[1], dslText: savedWorkflowText });
+    }
     if (url.includes("/api/workflows")) return json({ workflows });
+    if (url.includes("/api/demo/send-sample")) {
+      sentDemoBody = JSON.parse(String(init?.body));
+      return json({ statusCode: 202, result: { accepted: true }, sample: "GitHub push" });
+    }
     if (url.includes("/api/executions/execution-1")) {
       return json({
         id: "execution-1",
@@ -60,7 +89,26 @@ beforeEach(() => {
         status: "success",
         createdAt: "2026-06-05T00:00:00.000Z",
         event: { payload: { ref: "refs/heads/main" } },
-        stepLogs: [{ id: "step-1", stepIndex: 0, stepName: "notify-mock", type: "httpRequest", status: "success", attempt: 1 }]
+        stepLogs: [
+          {
+            id: "step-1",
+            stepIndex: 0,
+            stepName: "notify-mock",
+            type: "httpRequest",
+            status: "success",
+            attempt: 1,
+            input: { url: "http://localhost:4001/messages/notify" }
+          },
+          {
+            id: "step-2",
+            stepIndex: 1,
+            stepName: "payment-forward",
+            type: "httpRequest",
+            status: "skipped",
+            attempt: 1,
+            errorMessage: "step.when 条件不匹配"
+          }
+        ]
       });
     }
     if (url.includes("/api/executions")) {
@@ -106,27 +154,29 @@ describe("Webhook Flow 控制台", () => {
     expect(await screen.findByText("Webhook Flow")).toBeInTheDocument();
     const nav = screen.getByLabelText("主导航");
     expect(within(nav).getByText("概览")).toBeInTheDocument();
+    expect(within(nav).getByText("事件发送")).toBeInTheDocument();
     expect(within(nav).getByText("Mock Receiver")).toBeInTheDocument();
   });
 
-  it("可进入 workflow 页面并看到校验按钮", async () => {
+  it("Workflows 页面先选择 workflow，再绑定 endpoint 和下游", async () => {
     render(<App />);
     fireEvent.click(await screen.findByRole("button", { name: /Workflows/ }));
-    expect(screen.getByLabelText("Workflow 操作流程")).toBeInTheDocument();
-    expect(screen.getByLabelText("事件流关系")).toBeInTheDocument();
-    expect(screen.getByText("绑定和保存")).toBeInTheDocument();
-    expect(screen.getByText("高级配置")).toBeInTheDocument();
+    expect(screen.getByText("Workflow")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "新建空白 workflow" })).toBeInTheDocument();
+    expect(screen.getByLabelText("Workflow 名称")).toBeInTheDocument();
+    expect(screen.getByText("绑定 endpoint")).toBeInTheDocument();
     expect(screen.getByText("查看或手动编辑 DSL")).toBeInTheDocument();
-    expect(screen.getByText("事件输入")).toBeInTheDocument();
     expect(screen.getByText("下游输出")).toBeInTheDocument();
     expect(screen.getByText("预设下游")).toBeInTheDocument();
     expect(screen.getByText("自定义下游")).toBeInTheDocument();
+    expect(screen.queryByText("事件输入")).not.toBeInTheDocument();
   });
 
   it("可新增下游并生成多下游 workflow", async () => {
     render(<App />);
     fireEvent.click(await screen.findByRole("button", { name: /Workflows/ }));
 
+    fireEvent.change(screen.getByLabelText("Workflow 名称"), { target: { value: "归档流" } });
     fireEvent.change(screen.getByLabelText("下游名称"), { target: { value: "数据归档" } });
     fireEvent.change(screen.getByLabelText("下游路径"), { target: { value: "archive" } });
     fireEvent.click(screen.getByRole("button", { name: "新增下游" }));
@@ -135,22 +185,54 @@ describe("Webhook Flow 控制台", () => {
     await screen.findByText(/已新增下游/);
 
     fireEvent.click(screen.getByRole("button", { name: "用选中下游生成 workflow" }));
-    await waitFor(() => expect(screen.getByDisplayValue(/name: custom-downstream-flow/)).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByDisplayValue(/name: 归档流/)).toBeInTheDocument());
     expect(screen.getByDisplayValue(/forward-audit/)).toBeInTheDocument();
     expect(screen.getByDisplayValue(/forward-archive/)).toBeInTheDocument();
-    await new Promise((resolve) => setTimeout(resolve, 1100));
-    expect(screen.getByDisplayValue("新建或选择 workflow")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "删除" }));
+    expect(screen.queryByText("数据归档")).not.toBeInTheDocument();
+    expect(screen.queryByText("/messages/archive")).not.toBeInTheDocument();
+  });
+
+  it("已有 workflow 有改动时保存需要确认", async () => {
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: /Workflows/ }));
+    const workflowSelect = await screen.findByDisplayValue("新工作流");
+    fireEvent.change(workflowSelect, { target: { value: "workflow-old" } });
+    fireEvent.click(screen.getByText("查看或手动编辑 DSL"));
+    fireEvent.change(screen.getByDisplayValue(/name: old-workflow/), {
+      target: { value: `${workflows[1]!.dslText}\n` }
+    });
+    fireEvent.click(screen.getByRole("button", { name: "保存 workflow" }));
+
+    expect(await screen.findByRole("dialog", { name: "覆盖已有 workflow？" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "确认保存" }));
+    await waitFor(() => expect(savedWorkflowMethod).toBe("PUT"));
+    expect(savedWorkflowText).toContain("name: old-workflow");
   });
 
   it("支持自定义事件 payload", async () => {
     render(<App />);
-    fireEvent.click(await screen.findByRole("button", { name: /Workflows/ }));
+    fireEvent.click(await screen.findByRole("button", { name: /事件发送/ }));
     fireEvent.change(screen.getByDisplayValue("GitHub push"), { target: { value: "custom" } });
     expect(screen.getByLabelText("自定义事件 JSON")).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText("自定义事件 JSON"), {
       target: { value: '{ "event": "order.refunded", "orderId": "R-1" }' }
     });
     expect(screen.getByDisplayValue(/order.refunded/)).toBeInTheDocument();
+  });
+
+  it("发送页选择具体 workflow DSL 后发送事件", async () => {
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: /事件发送/ }));
+    expect(screen.getByLabelText("选择验收 workflow")).toBeInTheDocument();
+    expect(screen.getByText(/当前 DSL 包含/)).toBeInTheDocument();
+    expect(screen.getByText(/个下游 step/)).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("选择验收 workflow"), { target: { value: "workflow-old" } });
+    fireEvent.click(screen.getByRole("button", { name: "发送 workflow 验收" }));
+
+    await waitFor(() => expect(sentDemoBody?.workflowId).toBe("workflow-old"));
+    expect(mockFetch).toHaveBeenCalledWith(expect.stringContaining("/api/demo/send-sample"), expect.anything());
   });
 
   it("创建 endpoint 后展示一次性 secret 和详情", async () => {
@@ -186,6 +268,9 @@ describe("Webhook Flow 控制台", () => {
     fireEvent.click(await screen.findByRole("button", { name: /Executions/ }));
     fireEvent.click(await screen.findByRole("button", { name: "详情" }));
     expect(await screen.findByText("事件 payload")).toBeInTheDocument();
+    expect(screen.getByText("已执行下游")).toBeInTheDocument();
+    expect(screen.getByText(/未命中条件的 step/)).toBeInTheDocument();
+    expect(screen.getByText(/notify-mock/)).toBeInTheDocument();
     await waitFor(() => expect(screen.getByText(/refs\/heads\/main/)).toBeInTheDocument());
   });
 
